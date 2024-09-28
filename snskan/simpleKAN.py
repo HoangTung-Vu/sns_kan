@@ -126,79 +126,77 @@ class SimpleKAN(torch.nn.Module):
         
         
         return results
-    
-    def train(self, dataset, opt=None, steps=10, update_grid=True, grid_update_num=1, loss_fn=None,
-            batch=-1, log=1, scheduler=None, check_test_size = 100):
+    def train(self, train_data: TensorDataset, test_data: TensorDataset, opt: str = None, 
+            steps: int = 10, update_grid: bool = True, grid_update_num: int = 1, 
+            loss_fn = None, batch: int = 64, log: int = 1, 
+            scheduler= None) -> dict:
+        
         device = self.device
-        datatest = {}
-        datatest['test_input'] = dataset['test_input'][:check_test_size]
-        datatest['test_label'] = dataset['test_label'][:check_test_size]
-        # DataLoader setup
+        datatest_loader = DataLoader(test_data, batch_size=batch, shuffle=False)  # Using the entire test dataset in one batch
+        
         if loss_fn is None:
             loss_fn = lambda x, y: torch.mean((x - y) ** 2)
-        if batch == -1 or batch > dataset['train_input'].shape[0]:
-            batch_size = dataset['train_input'].shape[0]
-        else:
-            batch_size = batch
 
-        train_dataset = TensorDataset(dataset['train_input'], dataset['train_label'])
-        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+        train_loader = DataLoader(train_data, batch_size=batch, shuffle=True)
 
-        global train_loss
+        train_losses = []
+        test_losses = []
+
         if opt == "LBFGS":
-            optimizer = torch.optim.LBFGS(self.parameters(), lr=1.0, history_size=10, line_search_fn="strong_wolfe", tolerance_grad=1e-32, tolerance_change=1e-32)
+            optimizer = torch.optim.LBFGS(self.parameters(), lr=1.0, history_size=10, 
+                                        line_search_fn="strong_wolfe", tolerance_grad=1e-32, 
+                                        tolerance_change=1e-32)
         else: 
             optimizer = opt
-        def closure():
-            global train_loss
+
+        def closure(batch_data, batch_labels):
             optimizer.zero_grad()
             pred = self.forward(batch_data)
             train_loss = loss_fn(pred, batch_labels)
-            objective = train_loss
-            objective.backward()
-            return objective
-        train_losses = []
-        test_losses = []
-        # Main training loop
+            train_loss.backward()
+            return train_loss
+
         for step in range(steps):
-            pbar = tqdm(train_loader, desc=f'Step {step+1}/{steps}', ncols=100)  # Create tqdm for batches within a step
+            pbar = tqdm(train_loader, desc=f'Step {step+1}/{steps}', ncols=100)
+
             for batch_idx, (batch_data, batch_labels) in enumerate(pbar):
-                # Move batch data and labels to the specified device
-                batch_data = batch_data.to(device)
-                batch_labels = batch_labels.to(device)
+                batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
+
                 if update_grid and step == 0 and ((grid_update_num - batch_idx) > 0):
                     self.update_grid(batch_data)
-                
-                # Update grid if required
+
                 if opt == "LBFGS":
-                    optimizer.step(closure)
+                    optimizer.step(lambda: closure(batch_data, batch_labels))
                 else:
                     pred = self.forward(batch_data)
                     train_loss = loss_fn(pred, batch_labels)
                     optimizer.zero_grad()
                     train_loss.backward()
                     optimizer.step()
-                # Test the model after processing the batch
-                with torch.no_grad():
-                    test_data = datatest['test_input'].to(device)
-                    test_labels = datatest['test_label'].to(device)
-                    test_loss = loss_fn(self.forward(test_data), test_labels)
-                # Update pbar description with current loss
-                pbar.set_description("| train_loss: %.2e | test_loss: %.2e |" % 
-                                    ((train_loss).cpu().detach().numpy(), 
-                                    (test_loss).cpu().detach().numpy()))
-                test_losses.append((test_loss).cpu().detach().numpy())
 
-                train_losses.append((train_loss).cpu().detach().numpy())
-                
+                # Evaluate the model using the test dataset
+                with torch.no_grad():
+                    test_loss = 0
+                    for test_batch_data, test_batch_labels in datatest_loader:
+                        test_batch_data, test_batch_labels = test_batch_data.to(device), test_batch_labels.to(device)
+                        test_loss += loss_fn(self.forward(test_batch_data), test_batch_labels).item()
+                    test_loss /= len(datatest_loader)  # Average test loss
+
+                pbar.set_description("| train_loss: %.2e | test_loss: %.2e |" % 
+                                    (train_loss.cpu().detach().numpy(), test_loss))
+
+                self.train_losses.append(train_loss.cpu().detach().numpy())
+                self.test_losses.append(test_loss)
+
             if step % log == 0:
                 lr = optimizer.param_groups[0]['lr']
                 print(f'Step {step+1}/{steps} completed. Train loss: {train_loss:.2e}, Test loss: {test_loss:.2e}, Learning rate: {lr:.2e}')
+            
             if scheduler is not None:
-                scheduler.step()
-        res = {
+                scheduler.step(test_loss)
+
+        torch.cuda.empty_cache()
+        return {
             'train_loss': train_losses,
             'test_loss': test_losses
         }
-        torch.cuda.empty_cache()
-        return res
