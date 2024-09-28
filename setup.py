@@ -2,9 +2,9 @@ from setuptools import setup, find_packages
 
 setup(
     name="sns_KAN",  # The name people will use to install your package
-    version="0.0.2",
+    version="0.0.3",
     packages=find_packages(),  # Automatically find the simpekan package
-    install_requires=[],  # Add any dependencies here
+    install_requires=['pykan', 'pytorch'],  # Add any dependencies here
     author="Hoang Tung",
     author_email="minnhhoangtungvu04@gmail.com",
     description="A simple KAN library with wavelet KAN",

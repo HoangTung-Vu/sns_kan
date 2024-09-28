@@ -4,6 +4,10 @@ import torch.nn.functional as F
 import math
 
 class Wavelet:
+    """All Wavelet family
+    Returns:
+        Use some function below for WavKANLayer
+    """
     @staticmethod
     def mexican_hat(x):
         term1 = ((x ** 2)-1)
@@ -39,6 +43,16 @@ class Wavelet:
 
 class WavKANLayer(nn.Module):
     def __init__(self, in_features, out_features, wavelet_type = Wavelet.mexican_hat, base_function = nn.SiLU(), device = 'cpu', lin_enable = False):
+        """_summary_
+
+        Args:
+            in_features (int): number of input dimension
+            out_features (int): number of output dimension
+            wavelet_type (Wavelet class function, optional): wavelet type. Defaults to Wavelet.mexican_hat.
+            base_function (Base function for linear part, optional): _description_. Defaults to nn.SiLU().
+            device (str, optional): device. Defaults to 'cpu'.
+            lin_enable (bool): Linear part enable Defaults to False.
+        """
         super(WavKANLayer, self).__init__()
         self.device = device
 
@@ -46,6 +60,7 @@ class WavKANLayer(nn.Module):
         self.out_features = out_features
         self.wavelet_type = wavelet_type
 
+        #Layer parameters 
         self.translation = nn.Parameter(torch.zeros(out_features, in_features))
         self.scale = nn.Parameter(torch.ones(out_features, in_features))
         self.wavelet_weights = nn.Parameter(torch.Tensor(out_features, in_features))
@@ -72,6 +87,7 @@ class WavKANLayer(nn.Module):
         translation_expanded = self.translation.unsqueeze(0).expand(x.size(0), -1, -1)
         scale_expanded = self.scale.unsqueeze(0).expand(x.size(0), -1, -1)
         x_scaled = (x_expanded - translation_expanded) / scale_expanded
+        #Performing Wavelet transform
         wav = self.wavelet_type(x_scaled)
         wavelet = wav * self.wavelet_weights.unsqueeze(0).expand_as(wav)
         output_wav = wavelet.sum(dim=2)

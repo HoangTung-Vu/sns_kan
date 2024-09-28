@@ -132,7 +132,23 @@ class SimpleKAN(torch.nn.Module):
             steps: int = 10, update_grid: bool = True, grid_update_num: int = 1, 
             loss_fn = None, batch: int = 64, log: int = 1, 
             scheduler= None) -> dict:
-        
+        """Training function
+
+        Args:
+            train_data (TensorDataset): training dataset
+            test_data (TensorDataset): testing dataset, model will evalute after training an epoch
+            opt (str, optional): Optimization function, recommend use torch.optim. Defaults to None.
+            steps (int, optional): Number of epochs. Defaults to 10.
+            update_grid (bool, optional): update_grid for Spl-KANLayer. Defaults to True.
+            grid_update_num (int, optional): _description_. Defaults to 1.
+            loss_fn (_type_, optional): loss function recommend torch.nn. Defaults to None.
+            batch (int, optional): batch_size. Defaults to 64.
+            log (int, optional): . Defaults to 1.
+            scheduler (_type_, optional): learning rate scheduler. Defaults to None.
+
+        Returns:
+            dict: train_losses and test_losses
+        """
         device = self.device
         test_loader = DataLoader(test_data, batch_size=batch, shuffle=False)
         
