@@ -126,21 +126,21 @@ class SimpleKAN(torch.nn.Module):
         
         
         return results
+    
+    
     def train(self, train_data: TensorDataset, test_data: TensorDataset, opt: str = None, 
             steps: int = 10, update_grid: bool = True, grid_update_num: int = 1, 
             loss_fn = None, batch: int = 64, log: int = 1, 
             scheduler= None) -> dict:
         
         device = self.device
-        datatest_loader = DataLoader(test_data, batch_size=batch, shuffle=False)  # Using the entire test dataset in one batch
+        test_loader = DataLoader(test_data, batch_size=batch, shuffle=False)
         
         if loss_fn is None:
             loss_fn = lambda x, y: torch.mean((x - y) ** 2)
 
         train_loader = DataLoader(train_data, batch_size=batch, shuffle=True)
 
-        train_losses = []
-        test_losses = []
 
         if opt == "LBFGS":
             optimizer = torch.optim.LBFGS(self.parameters(), lr=1.0, history_size=10, 
@@ -149,18 +149,22 @@ class SimpleKAN(torch.nn.Module):
         else: 
             optimizer = opt
 
-        def closure(batch_data, batch_labels):
+        def closure():
+            global train_loss
             optimizer.zero_grad()
             pred = self.forward(batch_data)
             train_loss = loss_fn(pred, batch_labels)
-            train_loss.backward()
-            return train_loss
-
+            objective = train_loss
+            objective.backward()
+            return objective
+        train_losses = []
+        test_losses = []
         for step in range(steps):
             pbar = tqdm(train_loader, desc=f'Step {step+1}/{steps}', ncols=100)
 
             for batch_idx, (batch_data, batch_labels) in enumerate(pbar):
-                batch_data, batch_labels = batch_data.to(device), batch_labels.to(device)
+                batch_data = batch_data.to(device)
+                batch_labels = batch_labels.to(device)
 
                 if update_grid and step == 0 and ((grid_update_num - batch_idx) > 0):
                     self.update_grid(batch_data)
@@ -174,26 +178,30 @@ class SimpleKAN(torch.nn.Module):
                     train_loss.backward()
                     optimizer.step()
 
-                # Evaluate the model using the test dataset
-                with torch.no_grad():
-                    test_loss = 0
-                    for test_batch_data, test_batch_labels in datatest_loader:
-                        test_batch_data, test_batch_labels = test_batch_data.to(device), test_batch_labels.to(device)
-                        test_loss += loss_fn(self.forward(test_batch_data), test_batch_labels).item()
-                    test_loss /= len(datatest_loader)  # Average test loss
-
-                pbar.set_description("| train_loss: %.2e | test_loss: %.2e |" % 
-                                    (train_loss.cpu().detach().numpy(), test_loss))
-
-                self.train_losses.append(train_loss.cpu().detach().numpy())
-                self.test_losses.append(test_loss)
+                train_losses.append(train_loss.cpu().detach().numpy())
+                pbar.set_description("| train_loss: %.2e |" % (train_loss.cpu().detach().numpy()))
+            
+            #Evaluate for every epochs
+            
+            with torch.no_grad():
+                test_loss = 0.0
+                num = 0.0
+                for test_batch_data, test_batch_labels in test_loader :
+                    test_batch_data = test_batch_data.to(device)  
+                    test_batch_labels = test_batch_labels.to(device) 
+                    test_loss += loss_fn(self.forward(test_batch_data), test_batch_labels).item()
+                    num = num+1
+                
+                test_loss /= num
+                print(f'Test loss in this epoch: {test_loss}')
+                test_losses.append(test_loss)
 
             if step % log == 0:
                 lr = optimizer.param_groups[0]['lr']
                 print(f'Step {step+1}/{steps} completed. Train loss: {train_loss:.2e}, Test loss: {test_loss:.2e}, Learning rate: {lr:.2e}')
             
             if scheduler is not None:
-                scheduler.step(test_loss)
+                scheduler.step()
 
         torch.cuda.empty_cache()
         return {
