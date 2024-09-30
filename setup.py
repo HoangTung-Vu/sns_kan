@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="sns_KAN",  # The name people will use to install your package
-    version="0.1.0",
+    version="0.1.1",
     packages=find_packages(),  # Automatically find the simpekan package
     install_requires=['pykan'],  # Add any dependencies here
     author="Hoang Tung M Vu, Pham Ngoc Do",

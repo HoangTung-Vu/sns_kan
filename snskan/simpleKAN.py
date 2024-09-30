@@ -156,7 +156,12 @@ class SimpleKAN(torch.nn.Module):
             dict: train_losses, test_losses, train_acc, test_acc
         """
         device = self.device
-        test_loader = DataLoader(test_data, batch_size=batch, shuffle=False)
+        test_size = len(test_data)
+        batch_test = batch
+        while test_size % batch_test != 0:
+            batch_test -= 1
+            
+        test_loader = DataLoader(test_data, batch_size=batch_test, shuffle=False)
         
         if loss_fn is None:
             loss_fn = lambda x, y: torch.mean((x - y) ** 2)
