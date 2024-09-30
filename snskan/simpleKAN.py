@@ -206,7 +206,8 @@ class SimpleKAN(torch.nn.Module):
                 train_losses.append(train_loss.cpu().detach().numpy())
                 pbar.set_description("| train_loss: %.2e |" % (train_loss.cpu().detach().numpy()))
             #Evaluate for every epochs
-            
+            if scheduler is not None:
+                scheduler.step()
             with torch.no_grad():
                 test_loss = 0.0
                 num = 0.0
@@ -229,8 +230,6 @@ class SimpleKAN(torch.nn.Module):
                 lr = optimizer.param_groups[0]['lr']
                 print(f'Step {step+1}/{steps} completed. Train loss: {train_loss:.2e}, Test loss: {test_loss:.2e}, Learning rate: {lr:.2e}')
             
-            if scheduler is not None:
-                scheduler.step()
 
         torch.cuda.empty_cache()
         return {
