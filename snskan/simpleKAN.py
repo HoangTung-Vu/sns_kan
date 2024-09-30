@@ -6,6 +6,9 @@ import numpy as np
 from tqdm import tqdm
 from kan.KANLayer import KANLayer
 from torch.utils.data import DataLoader, TensorDataset
+
+dtype = torch.get_default_dtype()
+
 class SimpleKAN(torch.nn.Module):
     def __init__(self, layers : torch.nn.ModuleList, base_fun = torch.nn.SiLU(), seed = 1, device = 'cpu'):
         """Initialize
@@ -53,6 +56,9 @@ class SimpleKAN(torch.nn.Module):
         for layer in self.layers:
             if isinstance(layer, KANLayer) :
                 x, preacts, postacts_numerical, postspline = layer(x)
+                del preacts
+                del postacts_numerical
+                del postspline
             else :
                 x = layer(x)
             self.acts.append(x)
@@ -175,9 +181,11 @@ class SimpleKAN(torch.nn.Module):
             return objective
         train_losses = []
         test_losses = []
+        train_acc = []
+        test_acc = []
         for step in range(steps):
             pbar = tqdm(train_loader, desc=f'Step {step+1}/{steps}', ncols=100)
-
+            train_acc_ep = 0.0
             for batch_idx, (batch_data, batch_labels) in enumerate(pbar):
                 batch_data = batch_data.to(device)
                 batch_labels = batch_labels.to(device)
@@ -189,28 +197,33 @@ class SimpleKAN(torch.nn.Module):
                     optimizer.step(lambda: closure(batch_data, batch_labels))
                 else:
                     pred = self.forward(batch_data)
+                    train_acc_ep += torch.mean((torch.argmax(pred.type(dtype), dim = 1) == batch_labels.type(dtype)).type(dtype))
                     train_loss = loss_fn(pred, batch_labels)
                     optimizer.zero_grad()
                     train_loss.backward()
                     optimizer.step()
-
+                train_acc.append((train_acc_ep.cpu().numpy()/(batch_idx+1)))
                 train_losses.append(train_loss.cpu().detach().numpy())
                 pbar.set_description("| train_loss: %.2e |" % (train_loss.cpu().detach().numpy()))
-            
             #Evaluate for every epochs
             
             with torch.no_grad():
                 test_loss = 0.0
                 num = 0.0
+                test_acc_ep = 0.0
                 for test_batch_data, test_batch_labels in test_loader :
                     test_batch_data = test_batch_data.to(device)  
                     test_batch_labels = test_batch_labels.to(device) 
                     test_loss += loss_fn(self.forward(test_batch_data), test_batch_labels).item()
+                    test_acc_ep += torch.mean((torch.argmax(self.forward(test_batch_data).type(dtype), dim = 1) == test_batch_labels.type(dtype)).type(dtype))
                     num = num+1
                 
                 test_loss /= num
+                test_acc_ep /= num
                 print(f'Test loss in this epoch: {test_loss}')
+                print(f'Test accuracy in this epoch : {test_acc_ep}')
                 test_losses.append(test_loss)
+                test_acc.append(test_acc_ep.cpu().detach().numpy())
 
             if step % log == 0:
                 lr = optimizer.param_groups[0]['lr']
@@ -222,5 +235,7 @@ class SimpleKAN(torch.nn.Module):
         torch.cuda.empty_cache()
         return {
             'train_loss': train_losses,
-            'test_loss': test_losses
+            'test_loss': test_losses,
+            'train_acc': train_acc,
+            'test_acc' : test_acc
         }
