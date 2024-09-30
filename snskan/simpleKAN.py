@@ -153,7 +153,7 @@ class SimpleKAN(torch.nn.Module):
             scheduler (_type_, optional): learning rate scheduler. Defaults to None.
 
         Returns:
-            dict: train_losses and test_losses
+            dict: train_losses, test_losses, train_acc, test_acc
         """
         device = self.device
         test_loader = DataLoader(test_data, batch_size=batch, shuffle=False)
