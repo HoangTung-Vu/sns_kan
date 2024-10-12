@@ -134,7 +134,7 @@ class SimpleKAN(torch.nn.Module):
         return results
     
     
-    def train(self, train_data: TensorDataset, test_data: TensorDataset, opt: str = None, 
+    def train(self, train_data: TensorDataset, test_data: TensorDataset, opt: None, 
             steps: int = 10, update_grid: bool = True, grid_update_num: int = 1, 
             loss_fn = None, batch: int = 64, log: int = 1, 
             scheduler= None) -> dict:
