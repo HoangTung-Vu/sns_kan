@@ -134,7 +134,7 @@ class SimpleKAN(torch.nn.Module):
         return results
     
     
-    def fit(self, train_data: TensorDataset, test_data: TensorDataset, opt: None, 
+    def fit(self, train_data: TensorDataset, test_data: TensorDataset, opt: str = None, 
             steps: int = 10, update_grid: bool = True, grid_update_num: int = 1, 
             loss_fn = None, batch: int = 64, log: int = 1, 
             scheduler= None) -> dict:
@@ -190,7 +190,8 @@ class SimpleKAN(torch.nn.Module):
         test_acc = []
         for step in range(steps):
             pbar = tqdm(train_loader, desc=f'Step {step+1}/{steps}', ncols=100)
-            train_acc_ep = 0.0
+            total_correct = 0
+            total_samples = 0
             for batch_idx, (batch_data, batch_labels) in enumerate(pbar):
                 batch_data = batch_data.to(device)
                 batch_labels = batch_labels.to(device)
@@ -202,34 +203,49 @@ class SimpleKAN(torch.nn.Module):
                     optimizer.step(lambda: closure(batch_data, batch_labels))
                 else:
                     pred = self.forward(batch_data)
-                    train_acc_ep += torch.mean((torch.argmax(pred.type(dtype), dim = 1) == batch_labels.type(dtype)).type(dtype))
+                    total_correct += (torch.argmax(pred.type(dtype), dim=1) == batch_labels.type(dtype)).sum().item()
+                    total_samples += batch_labels.size(0)
                     train_loss = loss_fn(pred, batch_labels)
                     optimizer.zero_grad()
                     train_loss.backward()
                     optimizer.step()
-                train_acc.append((train_acc_ep.cpu().numpy()/(batch_idx+1)))
+
                 train_losses.append(train_loss.cpu().detach().numpy())
                 pbar.set_description("| train_loss: %.2e |" % (train_loss.cpu().detach().numpy()))
+            
+            train_acc_ep = total_correct / total_samples if total_samples > 0 else 0.0
+            print(f"Train accuracy in this epoch : {train_acc_ep}")
+            train_acc.append(train_acc_ep)
             #Evaluate for every epochs
             if scheduler is not None:
                 scheduler.step()
             with torch.no_grad():
                 test_loss = 0.0
-                num = 0.0
+                total_correct = 0
+                total_samples = 0
                 test_acc_ep = 0.0
-                for test_batch_data, test_batch_labels in test_loader :
-                    test_batch_data = test_batch_data.to(device)  
-                    test_batch_labels = test_batch_labels.to(device) 
-                    test_loss += loss_fn(self.forward(test_batch_data), test_batch_labels).item()
-                    test_acc_ep += torch.mean((torch.argmax(self.forward(test_batch_data).type(dtype), dim = 1) == test_batch_labels.type(dtype)).type(dtype))
-                    num = num+1
-                
-                test_loss /= num
-                test_acc_ep /= num
+
+                for test_batch_data, test_batch_labels in test_loader:
+                    test_batch_data = test_batch_data.to(device)
+                    test_batch_labels = test_batch_labels.to(device)
+
+                    loss = loss_fn(self.forward(test_batch_data), test_batch_labels)
+                    test_loss += loss.item()
+
+                    predictions = self.forward(test_batch_data)
+                    predicted_labels = torch.argmax(predictions, dim=1)
+
+                    total_correct += (predicted_labels == test_batch_labels).sum().item()
+                    total_samples += test_batch_labels.size(0)
+
+                test_loss /= len(test_loader)
+                test_acc_ep = total_correct / total_samples
+
                 print(f'Test loss in this epoch: {test_loss}')
                 print(f'Test accuracy in this epoch : {test_acc_ep}')
+
                 test_losses.append(test_loss)
-                test_acc.append(test_acc_ep.cpu().detach().numpy())
+                test_acc.append(test_acc_ep)
 
             if step % log == 0:
                 lr = optimizer.param_groups[0]['lr']
@@ -244,21 +260,30 @@ class SimpleKAN(torch.nn.Module):
             'test_acc' : test_acc
         }
 
-    def save(self, path):
-        # Save the entire model, including the layer definitions
-        torch.save({
-            'model_state_dict': self.state_dict(),
-            'layers': self.layers,  # Save the architecture (layers)
-            'device': self.device,
-            'seed': torch.initial_seed()
-        }, path)
+    def save(self, path = 'model'):
+        try:
+            # Save the model's state_dict along with layers, device, and seed
+            torch.save({
+                'model_state_dict': self.state_dict(),
+                'layers': self.layers,  # Save the architecture (layers)
+                'device': self.device,
+                'seed': torch.initial_seed()
+            }, path)
+            print(f"Model saved successfully at {path}")
+        except Exception as e:
+            print(f"Failed to save model: {e}")
 
     @staticmethod
     def load(path):
-        checkpoint = torch.load(path)
-        # Rebuild model with saved layers
-        model = SimpleKAN(layers=checkpoint['layers'], device=checkpoint['device'])
-        model.load_state_dict(checkpoint['model_state_dict'])
-        torch.manual_seed(checkpoint['seed'])
-        model.to(checkpoint['device'])
-        return model
+        try:
+            checkpoint = torch.load(path)
+            model = SimpleKAN(layers=checkpoint['layers'], device=checkpoint['device'])
+            model.load_state_dict(checkpoint['model_state_dict'])
+            torch.manual_seed(checkpoint['seed'])
+            model.to(checkpoint['device'])
+            print(f"Model loaded successfully from {path}")
+            return model
+        
+        except Exception as e:
+            print(f"Failed to load model: {e}")
+            return None
