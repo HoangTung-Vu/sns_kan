@@ -243,3 +243,22 @@ class SimpleKAN(torch.nn.Module):
             'train_acc': train_acc,
             'test_acc' : test_acc
         }
+
+    def save(self, path):
+        # Save the entire model, including the layer definitions
+        torch.save({
+            'model_state_dict': self.state_dict(),
+            'layers': self.layers,  # Save the architecture (layers)
+            'device': self.device,
+            'seed': torch.initial_seed()
+        }, path)
+
+    @staticmethod
+    def load(path):
+        checkpoint = torch.load(path)
+        # Rebuild model with saved layers
+        model = SimpleKAN(layers=checkpoint['layers'], device=checkpoint['device'])
+        model.load_state_dict(checkpoint['model_state_dict'])
+        torch.manual_seed(checkpoint['seed'])
+        model.to(checkpoint['device'])
+        return model
