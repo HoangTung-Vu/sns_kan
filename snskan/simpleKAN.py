@@ -215,8 +215,8 @@ class SimpleKAN(torch.nn.Module):
                 pbar.set_description("| train_loss: %.2e |" % (train_loss.cpu().detach().numpy()))
                         #Evaluate for every epochs
             
-                if scheduler is not None:
-                    scheduler.step()
+            if scheduler is not None:
+                scheduler.step()
             train_acc_ep = total_correct / total_samples if total_samples > 0 else 0.0
             print(f"Train accuracy in this epoch : {train_acc_ep}")
             train_acc.append(train_acc_ep)
