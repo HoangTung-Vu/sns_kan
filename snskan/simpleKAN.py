@@ -192,6 +192,7 @@ class SimpleKAN(torch.nn.Module):
             pbar = tqdm(train_loader, desc=f'Step {step+1}/{steps}', ncols=100)
             total_correct = 0
             total_samples = 0
+            current_lr = optimizer.param_groups[0]['lr']
             for batch_idx, (batch_data, batch_labels) in enumerate(pbar):
                 batch_data = batch_data.to(device)
                 batch_labels = batch_labels.to(device)
@@ -212,13 +213,14 @@ class SimpleKAN(torch.nn.Module):
 
                 train_losses.append(train_loss.cpu().detach().numpy())
                 pbar.set_description("| train_loss: %.2e |" % (train_loss.cpu().detach().numpy()))
+                        #Evaluate for every epochs
             
+                if scheduler is not None:
+                    scheduler.step()
             train_acc_ep = total_correct / total_samples if total_samples > 0 else 0.0
             print(f"Train accuracy in this epoch : {train_acc_ep}")
             train_acc.append(train_acc_ep)
-            #Evaluate for every epochs
-            if scheduler is not None:
-                scheduler.step()
+            
             with torch.no_grad():
                 test_loss = 0.0
                 total_correct = 0
@@ -248,8 +250,7 @@ class SimpleKAN(torch.nn.Module):
                 test_acc.append(test_acc_ep)
 
             if step % log == 0:
-                lr = optimizer.param_groups[0]['lr']
-                print(f'Step {step+1}/{steps} completed. Train loss: {train_loss:.2e}, Test loss: {test_loss:.2e}, Learning rate: {lr:.2e}')
+                print(f'Step {step+1}/{steps} completed. Train loss: {train_loss:.2e}, Test loss: {test_loss:.2e}, Learning rate: {current_lr:.2e}')
             
 
         torch.cuda.empty_cache()
