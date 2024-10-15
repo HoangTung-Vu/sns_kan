@@ -3,57 +3,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-class Wavelet:
-    """All Wavelet family
-    Returns:
-        Use some function below for WavKANLayer
-    """
-    @staticmethod
-    def mexican_hat(x):
-        term1 = ((x ** 2) - 1)
-        term2 = torch.exp(-0.5 * x ** 2)
-        wavelet = (2 / (math.sqrt(3) * math.pi ** 0.25)) * term1 * term2
-        return wavelet
-    
-    @staticmethod 
-    def morlet(x):
-        omega0 = 5.0  # Central frequency
-        real = torch.cos(omega0 * x)
-        envelope = torch.exp(-0.5 * x ** 2)
-        wavelet = envelope * real
-        return wavelet
-    
-    @staticmethod
-    def dog(x):
-        return -x * torch.exp(-0.5 * x ** 2)
-    
-    @staticmethod
-    def meyer(x):
-        v = torch.abs(x)
-        pi = math.pi
-
-        def meyer_aux(v):
-            return torch.where(v <= 1/2, torch.ones_like(v), torch.where(v >= 1, torch.zeros_like(v), torch.cos(pi / 2 * nu(2 * v - 1))))
-
-        def nu(t):
-            return t ** 4 * (35 - 84 * t + 70 * t ** 2 - 20 * t ** 3)
-
-        wavelet = torch.sin(pi * v) * meyer_aux(v)
-        return wavelet
-
 class WavKANLayer_test(nn.Module):
-    def __init__(self, in_features, out_features, wavelet_type=Wavelet.mexican_hat, base_function=nn.SiLU(), device='cpu', lin_enable=False):
-        """_summary_
-
-        Args:
-            in_features (int): number of input dimension
-            out_features (int): number of output dimension
-            wavelet_type (Wavelet class function, optional): wavelet type. Defaults to Wavelet.mexican_hat.
-            base_function (Base function for linear part, optional): _description_. Defaults to nn.SiLU().
-            device (str, optional): device. Defaults to 'cpu'.
-            lin_enable (bool): Linear part enable Defaults to False.
+    def __init__(self, in_features, out_features, wavelet_type='mexican_hat', base_function=nn.SiLU(), device='cpu', lin_enable=False):
         """
-        super(WavKANLayer_test, self).__init__()
+        Args:
+            in_features (int): number of input dimensions.
+            out_features (int): number of output dimensions.
+            wavelet_type (str, optional): The type of wavelet to use ('mexican_hat', 'morlet', 'dog', or 'meyer').
+            base_function (torch.nn.Module, optional): Base function for linear part. Defaults to nn.SiLU().
+            device (str, optional): Device ('cpu' or 'cuda'). Defaults to 'cpu'.
+            lin_enable (bool, optional): Whether to enable linear part. Defaults to False.
+        """
+        super(WavKANLayer, self).__init__()
         self.device = device
         self.in_features = in_features
         self.out_features = out_features
@@ -72,16 +33,61 @@ class WavKANLayer_test(nn.Module):
 
         self.bn = nn.BatchNorm1d(out_features)
 
+    def wavelet_transform(self, x_scaled):
+        """Apply the selected wavelet function."""
+        if self.wavelet_type == 'mexican_hat':
+            term1 = (x_scaled ** 2) - 1
+            term2 = torch.exp(-0.5 * x_scaled ** 2)
+            wavelet = (2 / (math.sqrt(3) * math.pi ** 0.25)) * term1 * term2
+            del term1, term2  # Free memory after usage
+        elif self.wavelet_type == 'morlet':
+            omega0 = 5.0  # Central frequency
+            real = torch.cos(omega0 * x_scaled)
+            envelope = torch.exp(-0.5 * x_scaled ** 2)
+            wavelet = envelope * real
+            del real, envelope  # Free memory after usage
+        elif self.wavelet_type == 'dog':
+            wavelet = -x_scaled * torch.exp(-0.5 * x_scaled ** 2)
+        elif self.wavelet_type == 'meyer':
+            v = torch.abs(x_scaled)
+            pi = math.pi
+
+            def meyer_aux(v):
+                return torch.where(v <= 1/2, torch.ones_like(v), torch.where(v >= 1, torch.zeros_like(v), torch.cos(pi / 2 * self.nu(2 * v - 1))))
+
+            wavelet = torch.sin(pi * v) * meyer_aux(v)
+            del v  # Free memory after usage
+        else:
+            raise ValueError(f"Unknown wavelet type: {self.wavelet_type}")
+
+        return wavelet
+
+    @staticmethod
+    def nu(t):
+        """Auxiliary function for the Meyer wavelet."""
+        return t ** 4 * (35 - 84 * t + 70 * t ** 2 - 20 * t ** 3)
+
     def forward(self, x):
         # Efficient broadcasting without unnecessary expansion
-        # Perform Wavelet transform
-        wav = self.wavelet_type((x.unsqueeze(1) - self.translation) / self.scale)
+        x_scaled = (x.unsqueeze(1) - self.translation) / self.scale
+        
+        # Perform wavelet transform using the selected wavelet function
+        wav = self.wavelet_transform(x_scaled)
         wavelet_output = torch.einsum('boc,oc->bo', wav, self.wavelet_weights)
+        
+        # Explicitly delete intermediate variables to free memory
+        del x_scaled, wav  # Free memory after usage
 
         if self.lin_enable:
             # Compute linear part only if enabled
             bias = F.linear(self.base_function(x), self.lin_weights)
         else:
             bias = 0
+
+        # Apply batch normalization and return final result
+        output = self.bn(wavelet_output + bias)
         
-        return self.bn(wavelet_output + bias)
+        # Explicitly delete wavelet_output and bias after use
+        del wavelet_output, bias
+        
+        return output
