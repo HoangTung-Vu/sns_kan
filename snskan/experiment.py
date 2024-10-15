@@ -74,10 +74,8 @@ class WavKANLayer_test(nn.Module):
 
     def forward(self, x):
         # Efficient broadcasting without unnecessary expansion
-        x_scaled = (x.unsqueeze(1) - self.translation) / self.scale
-        
         # Perform Wavelet transform
-        wav = self.wavelet_type(x_scaled)
+        wav = self.wavelet_type((x.unsqueeze(1) - self.translation) / self.scale)
         wavelet_output = torch.einsum('boc,oc->bo', wav, self.wavelet_weights)
 
         if self.lin_enable:
