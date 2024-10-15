@@ -14,7 +14,7 @@ class WavKANLayer_test(nn.Module):
             device (str, optional): Device ('cpu' or 'cuda'). Defaults to 'cpu'.
             lin_enable (bool, optional): Whether to enable linear part. Defaults to False.
         """
-        super(WavKANLayer, self).__init__()
+        super(WavKANLayer_test, self).__init__()
         self.device = device
         self.in_features = in_features
         self.out_features = out_features
