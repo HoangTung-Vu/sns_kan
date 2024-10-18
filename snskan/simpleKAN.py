@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader, TensorDataset
 dtype = torch.get_default_dtype()
 
 class SimpleKAN(torch.nn.Module):
-    def __init__(self, layers : torch.nn.ModuleList, base_fun = torch.nn.SiLU(), seed = 1, device = 'cpu'):
+    def __init__(self, layers : torch.nn.ModuleList, seed = 1, device = 'cpu'):
         """Initialize
         Args:
             layers (torch.nn.ModuleList): Layers of KAN
